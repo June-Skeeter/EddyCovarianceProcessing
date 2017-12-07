@@ -1,0 +1,5 @@
+--2017-12-07 21:48:59--  ftp://nomads.ncdc.noaa.gov/GFS/analysis_only/201707/20170701/gfsanl_4_20170701_0000_000.grb2
+           => ‘gfsanl_4_20170701_0000_000.grb2’
+Resolving nomads.ncdc.noaa.gov (nomads.ncdc.noaa.gov)... 205.167.25.166, 2610:20:8040:2::166
+Connecting to nomads.ncdc.noaa.gov (nomads.ncdc.noaa.gov)|205.167.25.166|:21... failed: Connection timed out.
+Connecting to nomads.ncdc.noaa.gov (nomads.ncdc.noaa.gov)|2610:20:8040:2::166|:21... failed: Network is unreachable.
