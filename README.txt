@@ -1,7 +1,12 @@
-A collection of code used to processess Eddy Covaraince Data
+# A general package for postprocessing EC data processed in eddy pro
 
-Footpirnt Calculation
+Workflow:
 
-Gap Filling
+1) Combine EC data with Soil & Climate data sets
 
-Kitties!
+2) Postprocessing as per Papale et al. (2006)
+
+	A) QA/QC Filter
+	B) Storage corection
+	B) Spike removal
+	C) u* filter calculation via bootstrapping & subseuent filtering

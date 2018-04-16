@@ -9,18 +9,16 @@ from scipy.optimize import curve_fit
 
 
 class Compile:
-    def __init__(self,Flux_Paths,Met,Soil):
+    def __init__(self,Flux_Path,Met,Soil,frequency = '30T'):
         self.Fluxes = ['H','LE','co2_flux','ch4_flux']
-        Flux_10 = self.Format(pd.read_csv(Flux_Paths[0],delimiter = ',',skiprows = 0,parse_dates={'datetime':[1,2]},header = 1,na_values = -9999),v=1,drop = [0,1])
-        Flux_1 = self.Format(pd.read_csv(Flux_Paths[1],delimiter = ',',skiprows = 0,parse_dates={'datetime':[1,2]},header = 1,na_values = -9999),v=1,drop = [0,1])
-        Flux_10['Hz']=10
-        Flux_1['Hz'] = 1
-        Flux = Flux_1.append(Flux_10)
+        Flux = self.Format(pd.read_csv(Flux_Path,delimiter = ',',skiprows = 0,parse_dates={'datetime':[1,2]},header = 1,na_values = -9999),v=1,drop = [0,1])
         Met = self.Format(pd.read_csv(Met,delimiter = ',',skiprows = 1,parse_dates={'datetime':[0]},header = 0),v=2,drop = [0])
         Soil = self.Format(pd.read_csv(Soil,delimiter = ',',skiprows = 0,parse_dates={'datetime':[0]},header = 0),v=0,drop = [0])
 
+        Soil = Soil.resample(frequency).mean()
+        Met = Met.resample(frequency).mean()
+
         self.RawData = pd.concat([Flux,Met,Soil],axis = 1, join = 'outer')
-        self.RawData['Date_Key'] = 0
         for var in self.Fluxes:
             self.RawData[var+'_drop'] = 0
         self.RawData['Minute'] = self.RawData.index.hour*60+self.RawData.index.minute
@@ -28,6 +26,7 @@ class Compile:
         Mt = pytz.timezone('US/Mountain')
         self.RawData['UTC'] = self.RawData.index.tz_localize(pytz.utc).tz_convert(Mt)
         self.uThresh = .1
+        self.Data=self.RawData.copy()
 
     def Format(self,df,v,drop):
         df = df.ix[v:]
@@ -38,17 +37,14 @@ class Compile:
     
     def Date_Drop(self,Date,Vars):
         if Vars == 'All':
-            self.RawData = self.RawData.drop(self.RawData.loc[(self.RawData.index>Date[0])&(self.RawData.index<Date[1])].index)
+            self.Data = self.Data.drop(self.Data.loc[(self.Data.index>Date[0])&(self.Data.index<Date[1])].index)
         else:
-            self.RawData.loc[(self.RawData.index>Date[0])&(self.RawData.index<Date[1]),[Vars]]=np.nan
-        self.Data=self.RawData.copy()
+            self.Data.loc[(self.Data.index>Date[0])&(self.Data.index<Date[1]),[Vars]]=np.nan
 
     def Date_Key(self,Date,key):
         self.Data.loc[(self.Data.index>Date[0])&(self.Data.index<Date[1]),'Date_Key'] = key
-        # self.Data['biWeek'] = int(self.Data.index.week.values/2)
         self.Data['Month'] = self.Data.index.month
         
-            
     def Wind_Bins(self,Bins):
         self.bins = np.arange(0,360.1,Bins)
         self.Data['Dir'] = pd.cut(self.Data['wind_dir'],bins=self.bins,labels = (self.bins[0:-1]+self.bins[1:])/2)
@@ -57,7 +53,7 @@ class Compile:
                uFilter={'Var':'co2_flux','Plot':False},BootStraps={'Repetitions':100,'n_samples':10000}):
         def Rcalc(Grp,thrsh=0.95):
             Ratios=[]
-            for G in pd.to_numeric(Grp.index).values:#Grp.index:
+            for G in pd.to_numeric(Grp.index).values:
                 m1 = Grp[uFilter['Var']][pd.to_numeric(Grp.index)==G].values[0]
                 m2 = Grp[uFilter['Var']][pd.to_numeric(Grp.index)>G].mean()
                 Ratios.append(m1/m2)
@@ -96,15 +92,11 @@ class Compile:
         self.uThresh = Ge.mean()
         if uFilter['Plot'] == True:
             plt.figure(figsize=(6,5))
-            # plt.errorbar(Grp['u*'],Grp[uFilter['Var']],yerr=GrpSE,label = 'Mean +- 1SE')
             plt.hist(Ge,bins=30,density=True)
             ymin, ymax = plt.ylim()
             def Vlines(var,c,l):
                 plt.plot([var,var],[ymin,ymax],
                          color = c,label=l,linewidth=5)
-
-                # plt.plot([var,var],[Grp[uFilter['Var']].min(),Grp[uFilter['Var']].max()],
-                #          color = c,label=l,linewidth=5)
             Vlines(self.uThresh,c='red',l='Mean')
             Vlines(self.Pct['5%'],c='green',l='5%')
             Vlines(self.Pct['50%'],c='yellow',l='50%')
@@ -118,7 +110,7 @@ class Compile:
         self.Data['Photon_Flux'] = pd.cut(self.Data['PPFD_Avg'],bins=self.bins,labels = (self.bins[0:-1]+self.bins[1:])/2)
 
     def Rain_Check(self,thresh):
-        self.Data['Rain_diff'] = self.Data['Rain_mm_Tot'].diff()
+        # self.Data['Rain_diff'] = self.Data['Rain_mm_Tot'].diff()
         for var in self.Fluxes:
             if var!='ch4_flux':
                 self.Data.loc[self.Data['Rain_mm_Tot']>thresh[0],[var,var+'_drop']]=[np.nan,1]
@@ -200,19 +192,13 @@ class Compile:
     def Hyperbola(self,PPFD,alpha,beta):
         return((alpha*beta*PPFD)/(alpha*PPFD+beta))
 
-    # def ER(self,Temp,r10,q10):
-    #     return(r10*q10**((Temp-10)/10))
-
     def ER(self,Temp,r1,r2,r3):
         return(1/(r2*r2**Temp+r3))
         
 
     def Fco2_Fill(self,PPFD,Temp,p0 =(0.00699139,  3.08946606,  0.83363605,  0.57199121,  2.01299858)):#,p0 =(0.07456007,30.82786468,0.32274278,0.63617274,1.68500993)):# (0.00716274,1.52597427,1,0.5,0.01)):
         self.Data['NEE'] = np.nan
-        # self.Data['NEE2'] = np.nan
-        # self.Data['ER2'] = np.nan
         self.Data['ER'] = np.nan
-        # self.Data['GPP2'] = np.nan
         self.Data['GPP'] = np.nan
 
         Dataset = self.Data[['fco2',PPFD,Temp,'Date_Key','Month']].dropna()
@@ -228,20 +214,14 @@ class Compile:
             FillData = Filler[Filler[Key]==i].copy()
             popt, pcov = curve_fit(self.LTR, (Data[PPFD].values,Data[Temp].values,),
                            Data['fco2'].values,p0=popt)
-            # if i == 9:
-            #     popt[1] = 0.888041808316
             self.popts[str(i)]=popt
             FillData['NEE'] = self.LTR((FillData[PPFD],FillData[Temp]),popt[0],popt[1],popt[2],popt[3],popt[4])
             FillData['ER'],FillData['GPP'] = self.GPP_ER((FillData[PPFD],FillData[Temp]),popt[0],popt[1],popt[2],popt[3],popt[4])
-            # plt.figure(figsize=(5,5))
-            # plt.scatter(Data['Filler'],Data['fco2'])
             self.Data.loc[self.Data[Key]==i,'NEE'] = FillData['NEE']
             self.Data.loc[self.Data[Key]==i,'ER'] = FillData['ER']
             self.Data.loc[self.Data[Key]==i,'GPP'] = FillData['GPP']
 
         self.Data['Fco2'] = self.Data['fco2'].fillna(self.Data['NEE'])
-        # plt.figure(figsize=(5,5))
-        # plt.scatter(self.Data['Filler'],self.Data['fco2'])
 
     def Soil_Data_Avg(self,ratios=[.8,.2]):
         self.Data['Ts 2.5cm'] = self.Data['Temp_2_5_1']*ratios[0]+self.Data['Temp_2_5_2']*ratios[1]
@@ -251,4 +231,3 @@ class Compile:
     def Write(self,Root,Vars,Aliases):
         self.Data[Aliases]=self.Data[Vars]
         self.Data[Aliases].to_csv(Root+'FilteredData' +str(dt.datetime.now()).split(' ')[0]+'.csv')
-#         self.Data=self.Data.drop(Aliases,axis=1)
